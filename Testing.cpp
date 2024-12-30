@@ -17,6 +17,8 @@ https://github.com/KushagraK7/TMC2209_sensorless_homing_test/blob/main/TMC_Accel
 //George Motor
 https://catalog.orientalmotor.com/item/2-phase-unipolar-stepper-motors/shop-pkp-series-2-phase-unipolar-stepper-motors/pkp223mu09b
 
+Own hand written notes:
+TMC2209 paired wiht 0.9deg oriental motor, vref on stepper driver is 0.25V, at 24V supplied voltage, and current draw is 40-50mA
 
  * 
  */
