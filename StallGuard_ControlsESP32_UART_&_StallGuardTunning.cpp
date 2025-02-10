@@ -1,0 +1,119 @@
+
+//CONTROLS ESP32 - MAIN FUNCTION IS UART INTERFACE AND STALLGUARD TUNNING 
+
+#include <TMCStepper.h>
+
+// Pin definitions
+#define dirPin 5
+#define enablePin 26   
+#define RX_PIN 19
+#define TX_PIN 12
+#define STALLGUARD_PIN 21
+
+// Stepper motor settings
+uint16_t motor_microsteps = 8;
+
+int32_t set_tcools = 461; // SG_ResSult can be 0-510, so set_cools can be 0 - 255
+int32_t set_stall = 30;  // Stall detection threshold, 0 - 255
+
+// Flags and objects
+bool stalled_motor = false;
+//bool motor_moving = false;
+
+TMC2209Stepper driver(&Serial1, 0.11f, 0);
+
+// Interrupt function for stall detection
+void IRAM_ATTR stalled_position() {
+  stalled_motor = true;  // Set flag when a stall is detected
+}
+
+// Setup function
+void setup() {
+  // Initialize serial communications
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);  // ESP32 serial communication
+
+  // Pin modes for stepper driver
+  pinMode(STALLGUARD_PIN, INPUT);
+  pinMode(enablePin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+
+  attachInterrupt(digitalPinToInterrupt(STALLGUARD_PIN), stalled_position, RISING);
+
+  // Initialize TMC2209 driver
+  driver.begin();
+  driver.toff(4);
+  driver.blank_time(24);
+
+//Setting driver to control current through Vref potentiometer
+  driver.I_scale_analog(true);
+  driver.internal_Rsense(false);
+
+  driver.mstep_reg_select(true);
+  driver.microsteps(motor_microsteps);
+  driver.TPWMTHRS(0);
+  driver.semin(0);
+  driver.shaft(false);
+  driver.en_spreadCycle(false);
+  driver.pdn_disable(true);
+  driver.VACTUAL(0);
+  driver.SGTHRS(set_stall);
+  driver.TCOOLTHRS(set_tcools);
+
+   xTaskCreatePinnedToCore(
+    MotorTask,  // Motor Task
+    "MotorTask",  // A name just for humans
+    1024 * 4,  // Stack size
+    NULL,  // Parameters
+    3,  // Priority
+    NULL,  // Task handle
+    0);  // Core ID
+
+  digitalWrite(enablePin, LOW);
+
+  Serial.println("Setup ESP32");
+  delay(1000);
+}
+
+void loop() {
+  while (true) {
+  Serial.print(driver.TSTEP());
+  Serial.print(",");
+  Serial.println(driver.SG_RESULT());
+    delay(3000);
+  }
+}
+void MotorTask(void *pvParameters) {
+  while(true) {
+    digitalWrite(dirPin, LOW);
+    digitalWrite(enablePin, LOW);
+    while (true) {
+      if (stalled_motor == true) {
+        digitalWrite(enablePin, HIGH);
+        Serial.print("Stalled-CW,"); //Staled when going to open regulator
+        stalled_motor = false; // We'll set the stall flag to false, so it does not trigger this again
+        delay(1000);  // Delay for testing
+        break;        // Break from the while loop
+      }
+      delay(1);  // We need to kill some time while the motor moves
+    }
+
+    delay(1000);  // Delay 3 seconds for testing
+    digitalWrite(enablePin, LOW);
+    digitalWrite(dirPin, HIGH);
+
+    while (true)  // isRunning() is true while the stepper is moving to position. We can use this time to wait for a stall
+    {
+      if (stalled_motor == true) {
+        digitalWrite(enablePin, HIGH);
+        Serial.print("Stalled-CCW,"); //stalled when going to closed regulator 
+        stalled_motor = false; // We'll set the stall flag to false, so it does not trigger this again
+        delay(1000);  // Delay for testing
+        break;        // Break from the while loop
+      }
+      delay(1);  // We need to kill some time while the motor moves
+    }
+
+    delay(1000);  // Delay 3 seconds for testing
+  }
+}
